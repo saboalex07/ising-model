@@ -2,6 +2,7 @@
 #include <random>
 #include <vector>
 #include <cmath>
+#include <fstream>
 
 
 static void fillRandom(std::vector<std::vector<int> > &grid, int L, std::mt19937 &rng) {
@@ -24,7 +25,7 @@ static void printGrid(const std::vector<std::vector<int> > &grid) {
     }
 }
 
-static double magnetisation(const std::vector<std::vector<int> > &grid) {
+static double magnetization(const std::vector<std::vector<int> > &grid) {
     signed int L = grid.size();
     double sum = 0;
     for (int i = 0; i < L; ++i) {
@@ -80,6 +81,13 @@ int main() {
     const int equilibrationSweeps = 1000;
     const int measurementSweeps = 5000;
 
+    std::ofstream fout("data/magnetization.csv");
+    if (!fout) {
+        std::cerr << "Unable to open file" << std::endl;
+        return 1;
+    }
+    fout << "T,m\n"; // header
+
     for (int k = 0; k <= 20; k++) {
         double T = 3.5 - 0.1 * k;
         double sum = 0.0;
@@ -88,8 +96,11 @@ int main() {
         }
         for (int i = 0; i < measurementSweeps; ++i) {
             sweep(grid, T, rng);
-            sum += std::abs(magnetisation(grid));
+            sum += std::abs(magnetization(grid));
         }
         std::cout << T << ',' << sum / measurementSweeps << '\n';
+        fout<< T << ',' << sum / measurementSweeps << '\n';
     }
+    fout.close();
+    return 0;
 }
