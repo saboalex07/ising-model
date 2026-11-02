@@ -59,7 +59,7 @@ static void sweep(std::vector<std::vector<int> > &grid, double T, std::mt19937 &
     std::uniform_real_distribution<double> u(0.0, 1.0);
     for (int i = 0; i < L * L; ++i) {
         int row = site(rng); // picks at random
-        int col = site(rng);
+        int col = site(rng); // picks at random
         int deltaenergy = 2 * grid[row][col] * neighbourSum(grid, row, col, L);
         if (deltaenergy > 0) {
             double r = u(rng);
@@ -86,20 +86,27 @@ int main() {
         std::cerr << "Unable to open file" << std::endl;
         return 1;
     }
-    fout << "T,m\n"; // header
+    fout << "T,m,e\n"; // header
 
     for (int k = 0; k <= 20; k++) {
         double T = 3.5 - 0.1 * k;
-        double sum = 0.0;
+        double mag_sum = 0.0;
+        double energy_sum = 0.0;
         for (int i = 0; i < equilibrationSweeps; ++i) {
             sweep(grid, T, rng);
         }
         for (int i = 0; i < measurementSweeps; ++i) {
             sweep(grid, T, rng);
-            sum += std::abs(magnetization(grid));
+            mag_sum += std::abs(magnetization(grid));
+            energy_sum += energy(grid, L);
         }
-        std::cout << T << ',' << sum / measurementSweeps << '\n';
-        fout<< T << ',' << sum / measurementSweeps << '\n';
+
+        double m_avg = mag_sum / measurementSweeps;
+        double e_avg = energy_sum / measurementSweeps / (L * L);   // average, then per spin
+
+        std::cout << T << ',' << m_avg << ',' << e_avg << '\n';
+        fout      << T << ',' << m_avg << ',' << e_avg << '\n';
+
     }
     fout.close();
     return 0;
