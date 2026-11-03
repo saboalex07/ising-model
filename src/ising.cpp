@@ -5,128 +5,125 @@
 #include <fstream>
 #include <chrono>
 
+// the grid is one flat vector of N = L * L spins.
+// site (i, j) at index s = i * L + j.
 
-static void fillRandom(std::vector<std::vector<int> > &grid, int L, std::mt19937 &rng) {
-    std::uniform_int_distribution<int> coin(0, 1);
+// neighbour table
 
+static std::vector<int> makeNeighbourTable(int L) {
+    std::vector<int> nbr(4 * L * L);
     for (int i = 0; i < L; ++i) {
         for (int j = 0; j < L; ++j) {
-            grid[i][j] = 2 * coin(rng) - 1;
+            int s = i * L + j;
+            nbr[4 * s + 0] = ((i - 1 + L) % L) * L + j; // up
+            nbr[4 * s + 1] = ((i + 1) % L) * L + j;     // down
+            nbr[4 * s + 2] = i * L + (j - 1 + L) % L;   // left
+            nbr[4 * s + 3] = i * L + (j + 1) % L;       // right
         }
+    }
+    return nbr;
+}
+
+static void fillRandom(std::vector<int>& grid, std::mt19937& rng) {
+    std::uniform_int_distribution coin(0, 1);
+    for (int s = 0; s < static_cast<int>(grid.size()); ++s) {
+        grid[s] = 2 * coin(rng) - 1;
     }
 }
 
-static void printGrid(const std::vector<std::vector<int> > &grid) {
-    signed int L = grid.size();
-    for (int i = 0; i < L; ++i) {
-        for (int j = 0; j < L; ++j) {
-            std::cout << (grid[i][j] == 1 ? '+' : '-') << ' ';
-        }
-        std::cout << '\n'; // new line after each row
+
+
+// sum of all spins
+static int total_Magnetization(const std::vector<int>& grid) {
+    int sum = 0;
+    for (int s = 0; s < static_cast<int>(grid.size()); ++s) {
+        sum += grid[s];
     }
+    return sum;
 }
 
-static int total_magnetization(const std::vector<std::vector<int>>& grid) {
-    int L = grid.size();
+// sum of the four neighbours of s
+static int neighbourSum(const std::vector<int>& grid, const std::vector<int>& nbr, int s) {
+    return grid[nbr[4 * s + 0]] + grid[nbr[4 * s + 1]] + grid[nbr[4 * s + 2]] + grid[nbr[4 * s + 3]];
+}
+
+// total energy
+static int total_Energy(const std::vector<int>& grid, const std::vector<int>& nbr) {
     int sum = 0;
-    for (int i = 0; i < L; ++i)
-        for (int j = 0; j < L; ++j)
-            sum += grid[i][j];
-    return sum; // total magentization
+    for (int s = 0; s < static_cast<int>(grid.size()); ++s) {
+        sum += grid[s] * neighbourSum(grid, nbr, s);
+    }
+    return -sum / 2;
 }
 
-static int neighbourSum(const std::vector<std::vector<int> > &grid, int i, int j, int L) {
-    int up = (i - 1 + L) % L; // row above
-    int down = (i + 1) % L; // row below
-    int left = (j - 1 + L) % L; // column to the left
-    int right = (j + 1) % L; // column to the right
 
-    return grid[up][j] + grid[down][j] + grid[i][left] + grid[i][right];
-}
+static void sweep(std::vector<int>& grid, const std::vector<int>& nbr, double T, std::mt19937& rng, int& E, int& M) {
+    const int N = static_cast<int>(grid.size());
+    std::uniform_int_distribution site(0, N - 1); // picks site
+    std::uniform_real_distribution u(0.0, 1.0);
 
-static int energy(const std::vector<std::vector<int> > &grid, int L) {
-    int sum = 0;
-    for (int i = 0; i < L; ++i)
-        for (int j = 0; j < L; ++j)
-            sum += grid[i][j] * neighbourSum(grid, i, j, L);
-    return -sum / 2; // each bond was counted twice
-}
+    // precalc of possible positive dE
+    double w[9] = {};
+    w[4] = std::exp(-4.0 / T);
+    w[8] = std::exp(-8.0 / T);
 
-static void sweep(std::vector<std::vector<int> > &grid, double T, std::mt19937 &rng, int& E, int& M) {
-    signed int L = grid.size();
-
-    double w[9];
-    w[4] = std::exp(-4 / T); // precomputes possible positive dE
-    w[8] = std::exp(-8 / T);
-
-    std::uniform_int_distribution<int> site(0, L - 1);
-    std::uniform_real_distribution<double> u(0.0, 1.0);
-    for (int i = 0; i < L * L; ++i) {
-        int row = site(rng); // picks at random
-        int col = site(rng); // picks at random
-        int dE = 2 * grid[row][col] * neighbourSum(grid, row, col, L);
-
+    for (int attempt = 0; attempt < N; ++attempt) {
+        int s = site(rng);
+        int dE = 2 * grid[s] * neighbourSum(grid, nbr, s);
         if (dE <= 0 || u(rng) < w[dE]) {
-            grid[row][col] *= -1;        // flip
+            grid[s] = -grid[s];          // flip
             E += dE;                     // energy changes by dE
-            M += 2 * grid[row][col];     // spin went from -s to s, so M changes by 2s
+            M += 2 * grid[s];            // M changes by 2s
         }
     }
 }
 
 int main() {
+    auto start = std::chrono::steady_clock::now();
 
-    auto start = std::chrono::high_resolution_clock::now();
-
-    int L = 16;
-    std::vector grid(L, std::vector<int>(L));
-    std::mt19937 rng(42);
-    fillRandom(grid, L, rng);
-
+    const int L = 16;
+    const int N = L * L;
     const int equilibrationSweeps = 1000;
     const int measurementSweeps = 5000;
 
+    std::mt19937 rng(42);
+    std::vector<int> grid(N);
+    fillRandom(grid, rng);
+    const std::vector<int> nbr = makeNeighbourTable(L);
+
     std::ofstream fout("data/magnetization.csv");
     if (!fout) {
-        std::cerr << "Unable to open file" << std::endl;
+        std::cerr << "Unable to open data/magnetization.csv\n";
         return 1;
     }
     fout << "T,m,e\n"; // header
 
-
     for (int k = 0; k <= 20; ++k) {
-        double T = 3.5 - 0.1 * k;
-
-        int E = energy(grid, L);
-        int M = total_magnetization(grid);
+        const double T = 3.5 - 0.1 * k;
+        int E = total_Energy(grid, nbr);           // start values for this temperature
+        int M = total_Magnetization(grid);
 
         for (int i = 0; i < equilibrationSweeps; ++i) {
-            sweep(grid, T, rng, E, M);
+            sweep(grid, nbr, T, rng, E, M);
         }
 
         double mag_sum = 0.0;
         double energy_sum = 0.0;
-
         for (int i = 0; i < measurementSweeps; ++i) {
-            sweep(grid, T, rng, E, M);
-            mag_sum += std::abs(M); //running totals
+            sweep(grid, nbr, T, rng, E, M);
+            mag_sum += std::abs(M);          // running totals
             energy_sum += E;
         }
 
-        double m_avg = mag_sum / measurementSweeps / (L * L);
-        double e_avg = energy_sum / measurementSweeps / (L * L);   // average, then per spin
+        const double m_avg = mag_sum / measurementSweeps / N;
+        const double e_avg = energy_sum / measurementSweeps / N;
 
         std::cout << T << ',' << m_avg << ',' << e_avg << '\n';
-        fout      << T << ',' << m_avg << ',' << e_avg << '\n';
-
+        fout << T << ',' << m_avg << ',' << e_avg << '\n';
     }
     fout.close();
 
-    auto end = std::chrono::high_resolution_clock::now();
-
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-
-    std::cout << duration.count() << '\n';
-
+    auto end = std::chrono::steady_clock::now();
+    std::cout << std::chrono::duration<double>(end - start).count() << " s\n";
     return 0;
 }
