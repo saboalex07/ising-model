@@ -96,7 +96,7 @@ int main() {
         std::cerr << "Unable to open data/magnetization.csv\n";
         return 1;
     }
-    fout << "T,m,e\n"; // header
+    fout << "T,m,e,c,chi\n"; // header
 
     for (int k = 0; k <= 20; ++k) {
         const double T = 3.5 - 0.1 * k;
@@ -107,19 +107,36 @@ int main() {
             sweep(grid, nbr, T, rng, E, M);
         }
 
-        double mag_sum = 0.0;
         double energy_sum = 0.0;
+        double energy_square_sum = 0.0;
+        double mag_sum = 0.0;
+        double mag_square_sum = 0.0;
+
         for (int i = 0; i < measurementSweeps; ++i) {
             sweep(grid, nbr, T, rng, E, M);
-            mag_sum += std::abs(M);          // running totals
-            energy_sum += E;
+            energy_sum += E;                                  // running totals
+            energy_square_sum += static_cast<double>(E) * E;
+            mag_sum += std::abs(M);
+            mag_square_sum += static_cast<double>(M) * M;
         }
 
-        const double m_avg = mag_sum / measurementSweeps / N;
-        const double e_avg = energy_sum / measurementSweeps / N;
+        // averages of the totals E and M
+        const double E_avg = energy_sum / measurementSweeps;
+        const double E2_avg = energy_square_sum / measurementSweeps;
+        const double absM_avg = mag_sum / measurementSweeps;
+        const double M2_avg = mag_square_sum / measurementSweeps;
 
-        std::cout << T << ',' << m_avg << ',' << e_avg << '\n';
-        fout << T << ',' << m_avg << ',' << e_avg << '\n';
+        // heat capacity and susceptibility per spin
+        const double c = (E2_avg - E_avg * E_avg) / (N * T * T);
+        const double chi = (M2_avg - absM_avg * absM_avg) / (N * T);
+
+        // magnetization and energy per spin
+        const double m = absM_avg / N;
+        const double e = E_avg / N;
+
+
+        std::cout << T << ',' << m << ',' << e << ',' << c << ',' << chi << '\n';
+        fout << T << ',' << m << ',' << e << ',' << c << ',' << chi << '\n';
     }
     fout.close();
 
